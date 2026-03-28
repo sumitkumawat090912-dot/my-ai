@@ -7,46 +7,45 @@ import time
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 
-# --- CUSTOM CSS (Same Beautiful Look) ---
+# --- CUSTOM CSS (Sundar Design) ---
 st.markdown("""
 <style>
-    .stApp { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #ffffff; }
+    .stApp { background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%); color: #ffffff; }
     .main-title { font-size: 3rem !important; font-weight: 800; background: linear-gradient(90deg, #00d2ff, #3a7bd5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 20px; }
-    .stChatMessage { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 15px; margin-bottom: 10px; backdrop-filter: blur(10px); }
-    [data-testid="stChatMessage"][aria-label*="user"] { border-left: 4px solid #00d2ff; }
-    [data-testid="stChatMessage"][aria-label*="assistant"] { border-left: 4px solid #3a7bd5; }
-    .stChatInput > div > div > div { background-color: rgba(255, 255, 255, 0.1) !important; border: 1px solid rgba(255, 255, 255, 0.2) !important; border-radius: 25px !important; }
+    .stChatMessage { background-color: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 20px; margin-bottom: 15px; backdrop-filter: blur(10px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+    [data-testid="stChatMessage"][aria-label*="user"] { border-left: 5px solid #00d2ff; }
+    [data-testid="stChatMessage"][aria-label*="assistant"] { border-left: 5px solid #3a7bd5; }
+    .stChatInput > div > div > div { background-color: rgba(255, 255, 255, 0.1) !important; border: 1px solid rgba(255, 255, 255, 0.3) !important; border-radius: 25px !important; }
     .stChatInput input { color: white !important; }
-    section[data-testid="stSidebar"] { background-color: rgba(26, 26, 46, 0.95); border-right: 1px solid rgba(255,255,255,0.1); }
-    .stButton button { background: linear-gradient(90deg, #00d2ff, #3a7bd5); color: white; border: none; border-radius: 20px; font-weight: bold; }
-    .status-box { background-color: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 10px; border-left: 3px solid #00d2ff; margin: 10px 0; font-size: 0.9rem; }
+    section[data-testid="stSidebar"] { background-color: rgba(15, 12, 41, 0.95); border-right: 1px solid rgba(255,255,255,0.1); }
+    .stButton button { background: linear-gradient(90deg, #00d2ff, #3a7bd5); color: white; border: none; border-radius: 20px; font-weight: bold; padding: 10px 24px; }
+    .status-box { background-color: rgba(0, 210, 255, 0.1); padding: 10px; border-radius: 10px; border-left: 3px solid #00d2ff; margin: 10px 0; font-size: 0.9rem; color: #e0e0e0; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (API Keys) ---
 GROQ_KEY = "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"
 GEMINI_KEY = "AIzaSyD0mlq3W9veyvc-9piMFgAypx8KCjdLc4w"
 
-# --- CLIENT INITIALIZATION (Robust) ---
+# --- SAFE INITIALIZATION ---
 @st.cache_resource
 def init_models():
-    # 1. Initialize Groq
-    groq_c = None
+    g_client = None
+    g_model = None
+    
+    # 1. Groq Setup
     try:
-        groq_c = Groq(api_key=GROQ_KEY)
-    except Exception as e:
-        print(f"Groq Init Error: {e}")
+        g_client = Groq(api_key=GROQ_KEY)
+    except: pass
 
-    # 2. Initialize Gemini
-    gemini_m = None
+    # 2. Gemini Setup (Using 'gemini-pro' for Maximum Stability)
     try:
         genai.configure(api_key=GEMINI_KEY)
-        # SAHI MODEL NAME: 'gemini-1.5-flash' (Not latest)
-        gemini_m = genai.GenerativeModel('gemini-1.5-flash') 
-    except Exception as e:
-        print(f"Gemini Init Error: {e}")
+        # 'gemini-pro' is the most stable model for free tier
+        g_model = genai.GenerativeModel('gemini-pro') 
+    except: pass
         
-    return groq_c, gemini_m
+    return g_client, g_model
 
 groq_client, gemini_model = init_models()
 
@@ -54,93 +53,94 @@ groq_client, gemini_model = init_models()
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- TOOLS ---
-def search_internet_tool(query):
+# --- TOOL: INTERNET SEARCH ---
+def search_tool(query):
     try:
         with DDGS() as ddgs:
-            results = [r for r in ddgs.text(query, max_results=3)]
-        context = "\n".join([f"Source: {r['title']}\nInfo: {r['body']}" for r in results])
-        return context
+            return "\n".join([r['body'] for r in ddgs.text(query, max_results=3)])
     except:
-        return "Search unavailable."
+        return "No internet data."
 
 # --- MAIN BRAIN ---
-def get_response(user_prompt):
-    # Check Internet
-    search_keywords = ["news", "latest", "live", "weather", "market", "price"]
-    need_search = any(word in user_prompt.lower() for word in search_keywords)
+def generate_response(user_prompt):
+    # Step 1: Check if search needed
+    keywords = ["news", "live", "weather", "market", "price", "today", "aaj", "latest"]
+    use_net = any(k in user_prompt.lower() for k in keywords)
     
-    context_data = ""
-    if need_search:
-        with st.spinner("🌐 Scanning the Web..."):
-            context_data = search_internet_tool(user_prompt)
+    context = ""
+    if use_net:
+        with st.spinner("🌐 Internet Search Active..."):
+            context = search_tool(user_prompt)
 
-    system_prompt = "You are JARVIS, an advanced AI assistant. Be precise."
-    final_prompt = user_prompt
-    
-    if context_data:
-        final_prompt = f"User Question: {user_prompt}\n\nLive Data:\n{context_data}\n\nAnswer based on data."
+    full_prompt = user_prompt
+    if context:
+        full_prompt = f"Answer based on this live data:\n{context}\n\nQuestion: {user_prompt}"
 
-    messages_hist = [{"role": "system", "content": system_prompt}] + st.session_state.messages + [{"role": "user", "content": final_prompt}]
+    history = [{"role": "system", "content": "You are JARVIS."}] + st.session_state.messages + [{"role": "user", "content": full_prompt}]
 
-    # PRIORITY 1: GROQ (FAST)
+    # ATTEMPT 1: GROQ (Primary - Fast)
     if groq_client:
         try:
             res = groq_client.chat.completions.create(
                 model="llama3-70b-8192",
-                messages=messages_hist
+                messages=history
             )
-            return res.choices[0].message.content, "🚀 Groq Llama 3", True
-        except Exception as e:
-            # Agar Groq fail ho jaye to Gemini try karega
-            pass
+            return res.choices[0].message.content, "🚀 Groq Llama 3"
+        except:
+            pass # Silently fail to backup
 
-    # PRIORITY 2: GEMINI (BACKUP)
+    # ATTEMPT 2: GEMINI (Backup - Stable)
     if gemini_model:
         try:
-            # Gemini simple text prompt leta hai
-            res = gemini_model.generate_content(final_prompt)
-            return res.text, "💡 Gemini 1.5 Flash", True
+            # Gemini simple generate
+            res = gemini_model.generate_content(full_prompt)
+            return res.text, "💡 Gemini Pro"
         except Exception as e:
-            return f"❌ Gemini Error: {str(e)}", "❌ Error", False
+            # If even Gemini fails
+            return f"Backup Error: {str(e)}", "❌ Error"
 
-    return "All systems offline.", "❌ Offline", False
+    return "System Offline.", "❌ Offline"
 
-# --- SIDEBAR ---
+# --- SIDEBAR UI ---
 with st.sidebar:
     st.markdown("<h2>⚡ Control Panel</h2>", unsafe_allow_html=True)
-    if st.button("🗑️ Clear Memory"):
+    if st.button("🗑️ Clear Memory", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
     
-    st.markdown("### 🧠 System Status")
-    st.metric("Groq Engine", "🟢 Online" if groq_client else "🔴 Offline")
-    st.metric("Gemini Core", "🟢 Online" if gemini_model else "🔴 Offline")
+    st.markdown("### 🧠 Status")
+    st.metric("Groq Engine", "🟢 Ready" if groq_client else "🔴 Down")
+    st.metric("Gemini Core", "🟢 Ready" if gemini_model else "🔴 Down")
+    st.markdown("---")
+    st.info("Ye AI khud decide karta hai kaunsa model use karna hai.")
 
-# --- MAIN UI ---
+# --- MAIN CHAT UI ---
 st.markdown('<h1 class="main-title">J.A.R.V.I.S</h1>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; opacity: 0.7;">Powered by Groq & Gemini</p>', unsafe_allow_html=True)
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Chat History
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-if prompt := st.chat_input("Command de..."):
+# Input
+if prompt := st.chat_input("Ask anything..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
-        with st.spinner("Processing..."):
-            response, model_name, success = get_response(prompt)
+        with st.spinner("Thinking..."):
+            ans, model = generate_response(prompt)
             
-            st.markdown(f"<div class='status-box'>Active Model: <b>{model_name}</b></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='status-box'>Powered by: <b>{model}</b></div>", unsafe_allow_html=True)
             
             # Typewriter Effect
             placeholder = st.empty()
-            full_text = ""
-            for word in response.split():
-                full_text += word + " "
-                time.sleep(0.02)
-                placeholder.markdown(full_text + "▌")
-            placeholder.markdown(full_text)
+            text = ""
+            for w in ans.split():
+                text += w + " "
+                time.sleep(0.015)
+                placeholder.markdown(text + "▌")
+            placeholder.markdown(text)
             
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "assistant", "content": ans})
